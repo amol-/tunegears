@@ -1,0 +1,4 @@
+Jinja2==2.7
+http://www.turbogears.org/2.3/downloads/2.3.0/TurboGears2-2.3.0dev.tar.gz
+gmusicapi==1.2.0
+requests==1.2.0
