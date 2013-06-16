@@ -100,7 +100,7 @@ BASIC_HTML = '''<!DOCTYPE html>
 <html>
   <head>
     <style>
-      .btn { width: 24px; height: 24px; background-size: 24px 24px; display: inline-block; }
+      .btn { width: 24px; height: 24px; background-size: 24px 24px; display: inline-block; color:transparent; }
       #player { margin-bottom: 20px; font-size: 20px; line-height: 24px; }
       .play_btn { background-image: url("play.png"); }
       .stop_btn { background-image: url("stop.png"); }
