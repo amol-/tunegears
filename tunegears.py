@@ -92,6 +92,56 @@ class PlayMusicThread(Thread):
         else:
             log.info('MPG123 detected at %s', self.mpg123)
 
+
+import re
+import subprocess
+
+
+class VolumeManager(object):
+    VOLUME_RE = re.compile(r'\[(\d+%)\]')
+
+    def __init__(self, channel):
+        self.channel = channel
+        self.getvol_cmd = 'amixer get %s' % self.channel
+        self.setvol_cmd = 'amixer set %s' % self.channel
+
+        # Act as a cache for current value
+        self._value = None
+
+    def _call(self, cmd):
+        return subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
+
+    def get(self):
+        if self._value is not None:
+            return self._value
+
+        data = self._call(self.getvol_cmd)
+        volumes = self.VOLUME_RE.search(data)
+        if volumes is None:
+            return 0
+
+        volumes = volumes.groups()
+        self._value = int(volumes[0][:-1])
+        return self._value
+               
+    def set(self, value):
+        self._call('%s %s%%' % (self.setvol_cmd, value))
+        self._value = None
+
+    def up(self):
+        val = self.get()
+        val = min(100, val+5)
+        self.set(val)
+
+    def down(self):
+        val = self.get()
+        val = max(0, val-5)
+        self.set(val)
+
+    def mute(self):
+        self.set(0)
+
+
 import tg
 from tg import AppConfig, TGController, app_globals
 from tg import expose
@@ -101,24 +151,36 @@ BASIC_HTML = '''<!DOCTYPE html>
   <head>
     <style>
       .btn { width: 24px; height: 24px; background-size: 24px 24px; display: inline-block; color:transparent; }
-      #player { margin-bottom: 20px; font-size: 20px; line-height: 24px; }
+      #volume { float: right; margin-right: 30px; }
+      #player { font-size: 20px; line-height: 24px; position:fixed; top:0; left:0; width:100%%; background-color:white; height:40px; padding:20px; border-bottom: 1px solid #333333; }
+      #songs { margin-top: 95px; }
       .play_btn { background-image: url("play.png"); }
       .stop_btn { background-image: url("stop.png"); }
       .next_btn { background-image: url("next.png"); }
+      .volup_btn { background-image: url("volume-up.png"); }
+      .voldown_btn { background-image: url("volume-down.png"); }
+    </style>
+    </style>
     </style>
     <script src="/jquery.js"></script>
   </head>
   <body>
     <div id="player">
+      <div id="volume">
+        <a class="btn voldown_btn" href="#" onclick="return playerDo('vol-down')"></a>
+        <span id="cur-volume">?</span>
+        <a class="btn volup_btn" href="#" onclick="return playerDo('vol-up')"></a>
+      </div>
       <div><strong>Now Playing:</strong> <span id="now-playing"></span></div>
       <div>
-        <a class="btn stop_btn" href="#" onclick="return playerDo('stop')">&nbsp;</a>
-        <a class="btn next_btn" href="#" onclick="return playerDo('next')">&nbsp;</a>
+        <a class="btn stop_btn" href="#" onclick="return playerDo('stop')"></a>
+        <a class="btn next_btn" href="#" onclick="return playerDo('next')"></a>
         <strong>In Queue:</strong> <span id="queue-len"></span>
       </div>
     </div>
+    <div id="songs">
+        <table>%(songs)s</table>
     </div>
-    <table>%(songs)s</table>
     <script>
         function playerDo(action) {
             jQuery.get('/cmd/' + action, updateNowPlaying);
@@ -130,6 +192,7 @@ BASIC_HTML = '''<!DOCTYPE html>
                 var playingText = data['artist'] + ' - ' + data['title'];
                 jQuery('#now-playing').text(playingText);
                 jQuery('#queue-len').text(data['queue_len']);
+                jQuery('#cur-volume').text(data['volume']);
             });
         }
 
@@ -140,7 +203,7 @@ BASIC_HTML = '''<!DOCTYPE html>
 '''
 
 SONG_ROW = '''<tr>
-  <td><a class="btn play_btn" href="#" onclick="return playerDo('play/%(id)s')">&nbsp;</a></td>
+  <td><a class="btn play_btn" href="#" onclick="return playerDo('play/%(id)s')"></a></td>
   <td>%(artist)s</td>
   <td>%(album)s</td>
   <td>%(title)s</td>
@@ -160,6 +223,7 @@ class RootController(TGController):
         # SSE is better suited for this, but as we serve
         # on wsgiref it would block the player.
         playing = app_globals.player.get_playinfo()
+        playing['volume'] = app_globals.volume.get()
         return playing
 
     @expose('json:')
@@ -170,12 +234,18 @@ class RootController(TGController):
             app_globals.player.skip_song()
         elif cmd == 'stop':
             app_globals.player.stop_player()
+        elif cmd == 'vol-up':
+            app_globals.volume.up()
+        elif cmd == 'vol-down':
+            app_globals.volume.down()
         return dict(success=True)
 
 def _setup_music_player():
     log.info('Starting Music Player')
     config = tg.config
     app_globals = config.tg.app_globals
+
+    app_globals.volume = VolumeManager('Master')
 
     app_globals.player = PlayMusicThread(gm=app_globals.gm,
                                          songsmap=dict(((song['id'], song) for song in app_globals.library)))
