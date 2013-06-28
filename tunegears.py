@@ -245,7 +245,7 @@ def _setup_music_player():
     config = tg.config
     app_globals = config.tg.app_globals
 
-    app_globals.volume = VolumeManager('Master')
+    app_globals.volume = VolumeManager(config.volume.name)
 
     app_globals.player = PlayMusicThread(gm=app_globals.gm,
                                          songsmap=dict(((song['id'], song) for song in app_globals.library)))
